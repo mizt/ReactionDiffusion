@@ -38,6 +38,7 @@ class Metal {
     
         bool state = false;
     
+        id<MTLDevice> device;
         id<MTLTexture> texture[2];
         id<MTLCommandQueue> queue;
         id<MTLComputePipelineState> pipelineState;
@@ -57,25 +58,20 @@ class Metal {
         bool isLeftMouseDown = false;
         CGSize size;
     
-    
     public:
+    
+        MTLSamplerDescriptor *samplerDescriptor() {
+            MTLSamplerDescriptor *samplerDescriptor = [MTLSamplerDescriptor new];
+            samplerDescriptor.sAddressMode = samplerDescriptor.tAddressMode = MTLSamplerAddressModeRepeat;
+            samplerDescriptor.minFilter = samplerDescriptor.magFilter = MTLSamplerMinMagFilterLinear;
+            samplerDescriptor.normalizedCoordinates = YES;
+            return samplerDescriptor;
+        }
     
         Metal() {
             
-            id <MTLDevice> device = MTLCreateSystemDefaultDevice();
+            device = MTLCreateSystemDefaultDevice();
             
-            this->resolution = [device newBufferWithLength:sizeof(float)*2 options:MTLResourceOptionCPUCacheModeDefault];
-            float *r = (float *)[this->resolution contents];
-            r[0] = W;
-            r[1] = H;
-            
-            this->coeff = [device newBufferWithLength:sizeof(float)*4 options:MTLResourceOptionCPUCacheModeDefault];
-            float *c = (float *)[this->coeff contents];
-           
-            c[0] = 1.0;
-            c[1] = 0.5;
-            c[2] = 0.005;
-            c[3] = 0.03;
             
             id<MTLFunction> function = [[device newDefaultLibrary] newFunctionWithName:@"reactiondiffusion"];
             
@@ -97,21 +93,20 @@ class Metal {
             
             [this->texture[this->state] replaceRegion:MTLRegionMake2D(0,0,W,H) mipmapLevel:0 withBytes:data bytesPerRow:W<<4];
             
-            MTLSamplerDescriptor *samplerDescriptor = [MTLSamplerDescriptor new];
-            samplerDescriptor.sAddressMode = MTLSamplerAddressModeRepeat;
-            samplerDescriptor.tAddressMode = MTLSamplerAddressModeRepeat;
-            samplerDescriptor.minFilter = MTLSamplerMinMagFilterLinear;
-            samplerDescriptor.magFilter = MTLSamplerMinMagFilterLinear;
-            samplerDescriptor.normalizedCoordinates = YES;
-            this->samplerState = [MTLCreateSystemDefaultDevice() newSamplerStateWithDescriptor:samplerDescriptor];
+            this->samplerState = [MTLCreateSystemDefaultDevice() newSamplerStateWithDescriptor:samplerDescriptor()];
             
             this->argumentEncoder = [function newArgumentEncoderWithBufferIndex:0];
             this->argumentEncoderBuffer = [device newBufferWithLength:sizeof(float)*[argumentEncoder encodedLength] options:MTLResourceOptionCPUCacheModeDefault];
             [this->argumentEncoder setArgumentBuffer:argumentEncoderBuffer offset:0];
-            [this->argumentEncoder setBuffer:this->resolution offset:0 atIndex:0];
+            
+            this->resolution = MetalUtils::create(this->device,this->argumentEncoder,sizeof(float)*2,0,0);
+            MetalUtils::setFloatValue(this->resolution,W,H);
+            
             [this->argumentEncoder setBuffer:MetalUniform::$()->mouse() offset:0 atIndex:1];
-            [this->argumentEncoder setBuffer:this->coeff offset:0 atIndex:2];
-
+            
+            this->coeff = MetalUtils::create(this->device,this->argumentEncoder,sizeof(float)*4,0,2);
+            MetalUtils::setFloatValue(this->coeff,1.0,0.5,0.005,0.03);
+            
             this->win = [[NSWindow alloc] initWithContentRect:CGRectMake(0,0,W,H) styleMask:1 backing:NSBackingStoreBuffered defer:NO];
             
             this->bypass = new RGBA32FloatMetalLayer(@"default",@"bypass",CGRectMake(0,0,W,H),false);
@@ -120,40 +115,45 @@ class Metal {
             [[this->win contentView] addSubview:this->metalview];
             [this->win center];
             this->size = [[this->win contentView]frame].size;
-            
         }
         
         void render(unsigned int *buffer) {
             
             MetalUniform::$()->update([this->win frame].origin,this->size,[this->metalview isClick]);
             
-            id<MTLCommandBuffer> commandBuffer = this->queue.commandBuffer;
-            id<MTLComputeCommandEncoder> encoder = commandBuffer.computeCommandEncoder;
-            [encoder setComputePipelineState:this->pipelineState];
-            [encoder setTexture:texture[this->state] atIndex:0];
-            [encoder setTexture:texture[!this->state] atIndex:1];
+            int it = 5;
             
-            [encoder useResource:this->resolution usage:MTLResourceUsageRead];
-            [encoder useResource:MetalUniform::$()->mouse() usage:MTLResourceUsageRead];
-            [encoder useResource:this->coeff usage:MTLResourceUsageRead];
-            
-            [encoder setBuffer:this->argumentEncoderBuffer offset:0 atIndex:0];
-            [encoder setSamplerState:this->samplerState atIndex:0];
+            while(it--) {
+                id<MTLCommandBuffer> commandBuffer = this->queue.commandBuffer;
+                id<MTLComputeCommandEncoder> encoder = commandBuffer.computeCommandEncoder;
+                [encoder setComputePipelineState:this->pipelineState];
+                [encoder setTexture:texture[this->state] atIndex:0];
+                [encoder setTexture:texture[!this->state] atIndex:1];
+                
+                [encoder useResource:this->resolution usage:MTLResourceUsageRead];
+                [encoder useResource:MetalUniform::$()->mouse() usage:MTLResourceUsageRead];
+                [encoder useResource:this->coeff usage:MTLResourceUsageRead];
+                
+                [encoder setBuffer:this->argumentEncoderBuffer offset:0 atIndex:0];
+                [encoder setSamplerState:this->samplerState atIndex:0];
 
-            MTLSize threadGroupSize = MTLSizeMake(16,8,1);
-            MTLSize threadGroups = MTLSizeMake(texture[this->state].width/threadGroupSize.width,texture[this->state].height/threadGroupSize.height,1);
-            
-            [encoder dispatchThreadgroups:threadGroups threadsPerThreadgroup:threadGroupSize];
-            [encoder endEncoding];
-            [commandBuffer commit];
-            [commandBuffer waitUntilCompleted];
+                MTLSize threadGroupSize = MTLSizeMake(16,8,1);
+                MTLSize threadGroups = MTLSizeMake(texture[this->state].width/threadGroupSize.width,texture[this->state].height/threadGroupSize.height,1);
+                
+                [encoder dispatchThreadgroups:threadGroups threadsPerThreadgroup:threadGroupSize];
+                [encoder endEncoding];
+                [commandBuffer commit];
+                [commandBuffer waitUntilCompleted];
+                
+                this->state = !this->state;
+            };
             
             this->bypass->texture(texture[!this->state]);
             this->bypass->update(^(id<MTLCommandBuffer> commandBuffer){
                  dispatch_semaphore_signal(this->semaphore);
             });
             
-            this->state = !this->state;
+            
             
             dispatch_semaphore_wait(this->semaphore,DISPATCH_TIME_FOREVER);
             this->bypass->cleanup();

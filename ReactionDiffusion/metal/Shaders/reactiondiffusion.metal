@@ -3,13 +3,11 @@
 #import <metal_stdlib>
 #import "ShaderUtils.h"
 
-
 struct Arguments(prefix) {
     device float2 *resolution[[id(0)]];
     device float4 *mouse[[id(1)]];
     device float4 *coeff[[id(2)]];
 };
-
 
 using namespace metal;
 
@@ -19,7 +17,6 @@ kernel void reactiondiffusion(
     constant Arguments(prefix) &args[[buffer(0)]],
     sampler samplers[[sampler(0)]],
     uint2 gid[[thread_position_in_grid]]) {
-    
     
     if(gid.x<args.resolution[0].x&&gid.y<args.resolution[0].y) {
         

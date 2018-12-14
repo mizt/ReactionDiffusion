@@ -23,6 +23,40 @@ namespace Plane {
 
 #import <Foundation/Foundation.h>
 
+namespace MetalUtils {
+    
+    id<MTLBuffer> create(id<MTLDevice> device,id<MTLArgumentEncoder> encoder,int size,int offset,int index) {
+        id<MTLBuffer> buff = [device newBufferWithLength:size options:MTLResourceOptionCPUCacheModeDefault];
+        [encoder setBuffer:buff offset:offset atIndex:index];
+        return buff;
+    }
+    
+    id<MTLBuffer> create(id<MTLDevice> device,int size) {
+        id<MTLBuffer> buff = [device newBufferWithLength:size options:MTLResourceOptionCPUCacheModeDefault];
+        return buff;
+    }
+    
+    void setFloatValue(id<MTLBuffer> buff,float a) {
+        float *tmp = (float *)[buff contents];
+        tmp[0] = a;
+    }
+    
+    void setFloatValue(id<MTLBuffer> buff,float a,float aa) {
+        float *tmp = (float *)[buff contents];
+        tmp[0] = a;
+        tmp[1] = aa;
+    }
+    
+    void setFloatValue(id<MTLBuffer> buff,float a,float aa,float aaa,float aaaa) {
+        float *tmp = (float *)[buff contents];
+        tmp[0] = a;
+        tmp[1] = aa;
+        tmp[2] = aaa;
+        tmp[3] = aaaa;
+    }
+    
+};
+
 class MetalUniform {
     
     private:
@@ -38,8 +72,8 @@ class MetalUniform {
             
             id<MTLDevice> device = MTLCreateSystemDefaultDevice();
             
-            this->timeBuffer = [device newBufferWithLength:sizeof(float) options:MTLResourceOptionCPUCacheModeDefault];
-            this->mouseBuffer = [device newBufferWithLength:sizeof(float)*4 options:MTLResourceOptionCPUCacheModeDefault];
+            this->timeBuffer  = MetalUtils::create(device,1);
+            this->mouseBuffer = MetalUtils::create(device,4);
         }
     
         MetalUniform(const MetalUniform &me) {}
@@ -60,10 +94,8 @@ class MetalUniform {
     
         void update(CGPoint origin,CGSize size,bool isClick) {
             
-            float *timeBuffer = (float *)[this->timeBuffer contents];
-            timeBuffer[0] = CFAbsoluteTimeGetCurrent()-this->starttime;
             
-            float *mouseBuffer = (float *)[this->mouseBuffer contents];
+            MetalUtils::setFloatValue(this->timeBuffer,CFAbsoluteTimeGetCurrent()-this->starttime);
             
             double x = origin.x;
             double y = origin.y;
@@ -71,10 +103,16 @@ class MetalUniform {
             double h = size.height;
             
             NSPoint mouseLoc = [NSEvent mouseLocation];
-            mouseBuffer[0] = (mouseLoc.x-x)/w;
-            mouseBuffer[1] = 1.0-(mouseLoc.y-y)/h;
-            mouseBuffer[2] = (isClick)?1:0;
-            mouseBuffer[3] = 0.15;
+            
+            MetalUtils::setFloatValue(this->mouseBuffer,
+                (mouseLoc.x-x)/w,
+                1.0-(mouseLoc.y-y)/h,
+                (isClick)?1:0,
+                0.15
+            );
+            
+            
+           
         }
 };
 
