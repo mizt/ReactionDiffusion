@@ -15,19 +15,14 @@ struct VertInOut {
 	float2 texcoord[[user(texturecoord)]];
 };
 
-struct FragmentShaderArguments {
-	device float *time[[id(0)]];
-	device float2 *resolution[[id(1)]];
-	device float4 *mouse[[id(2)]];
-	texture2d<float> texture[[id(3)]];
-};
-
-#define strconcat(a,aa) a##aa
-#define VertexShader(a) strconcat(a,VertexShader)
-#define FragmentShader(a) strconcat(a,FragmentShader)
-
 constexpr sampler SAMPLAR(
     coord::normalized,
     address::repeat,
     filter::linear
 );
+
+
+#define strconcat(a,aa) a##aa
+#define VertexShader(a) strconcat(a,VertexShader)
+#define FragmentShader(a) strconcat(a,FragmentShader)
+#define Arguments(a) strconcat(a,Arguments)

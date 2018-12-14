@@ -44,6 +44,9 @@ class Metal {
         id<MTLBuffer> resolution;
         id<MTLBuffer> coeff;
         id<MTLSamplerState> samplerState;
+        id<MTLArgumentEncoder> argumentEncoder;
+        id<MTLBuffer> argumentEncoderBuffer;
+    
 
         NSWindow *win;
         MetalView *metalview;
@@ -74,7 +77,9 @@ class Metal {
             c[2] = 0.005;
             c[3] = 0.03;
             
-            this->pipelineState = [device newComputePipelineStateWithFunction:[[device newDefaultLibrary] newFunctionWithName:@"reactiondiffusion"] error:nil];
+            id<MTLFunction> function = [[device newDefaultLibrary] newFunctionWithName:@"reactiondiffusion"];
+            
+            this->pipelineState = [device newComputePipelineStateWithFunction:function error:nil];
             
             this->queue = [device newCommandQueue];
             
@@ -85,7 +90,10 @@ class Metal {
             this->texture[1] = [device newTextureWithDescriptor:descriptor];
             
             float *data = new float[W*H*4];
-            for(int i=0; i<W*H*4; i++) data[i] = 1;
+            for(int i=0; i<W*H; i++) {
+                data[i*4+0] = data[i*4+1] = data[i*4+2] = 0;
+                data[i*4+3] = 1;
+            }
             
             [this->texture[this->state] replaceRegion:MTLRegionMake2D(0,0,W,H) mipmapLevel:0 withBytes:data bytesPerRow:W<<4];
             
@@ -97,6 +105,13 @@ class Metal {
             samplerDescriptor.normalizedCoordinates = YES;
             this->samplerState = [MTLCreateSystemDefaultDevice() newSamplerStateWithDescriptor:samplerDescriptor];
             
+            this->argumentEncoder = [function newArgumentEncoderWithBufferIndex:0];
+            this->argumentEncoderBuffer = [device newBufferWithLength:sizeof(float)*[argumentEncoder encodedLength] options:MTLResourceOptionCPUCacheModeDefault];
+            [this->argumentEncoder setArgumentBuffer:argumentEncoderBuffer offset:0];
+            [this->argumentEncoder setBuffer:this->resolution offset:0 atIndex:0];
+            [this->argumentEncoder setBuffer:MetalUniform::$()->mouse() offset:0 atIndex:1];
+            [this->argumentEncoder setBuffer:this->coeff offset:0 atIndex:2];
+
             this->win = [[NSWindow alloc] initWithContentRect:CGRectMake(0,0,W,H) styleMask:1 backing:NSBackingStoreBuffered defer:NO];
             
             this->bypass = new RGBA32FloatMetalLayer(@"default",@"bypass",CGRectMake(0,0,W,H),false);
@@ -117,9 +132,12 @@ class Metal {
             [encoder setComputePipelineState:this->pipelineState];
             [encoder setTexture:texture[this->state] atIndex:0];
             [encoder setTexture:texture[!this->state] atIndex:1];
-            [encoder setBuffer:this->resolution offset:0 atIndex:0];
-            [encoder setBuffer:MetalUniform::$()->mouse() offset:0 atIndex:1];
-            [encoder setBuffer:this->coeff offset:0 atIndex:2];
+            
+            [encoder useResource:this->resolution usage:MTLResourceUsageRead];
+            [encoder useResource:MetalUniform::$()->mouse() usage:MTLResourceUsageRead];
+            [encoder useResource:this->coeff usage:MTLResourceUsageRead];
+            
+            [encoder setBuffer:this->argumentEncoderBuffer offset:0 atIndex:0];
             [encoder setSamplerState:this->samplerState atIndex:0];
 
             MTLSize threadGroupSize = MTLSizeMake(16,8,1);

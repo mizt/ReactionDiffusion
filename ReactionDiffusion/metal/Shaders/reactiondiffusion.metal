@@ -1,39 +1,50 @@
+#define prefix reactiondiffusion
+
 #import <metal_stdlib>
 #import "ShaderUtils.h"
 
+
+struct Arguments(prefix) {
+    device float2 *resolution[[id(0)]];
+    device float4 *mouse[[id(1)]];
+    device float4 *coeff[[id(2)]];
+};
+
+
 using namespace metal;
 
-kernel void reactiondiffusion(texture2d<float,access::sample> srcTexture[[texture(0)]],texture2d<float,access::write> dstTexture[[texture(1)]],
-    const device float2 &resolution[[buffer(0)]],const device float4 &mouse[[buffer(1)]],const device float4 &coeff[[buffer(2)]],sampler wrap[[sampler(0)]],uint2 gid[[thread_position_in_grid]]) {
+kernel void reactiondiffusion(
+    texture2d<float,access::sample> srcTexture[[texture(0)]],
+    texture2d<float,access::write> dstTexture[[texture(1)]],
+    constant Arguments(prefix) &args[[buffer(0)]],
+    sampler samplers[[sampler(0)]],
+    uint2 gid[[thread_position_in_grid]]) {
     
     
-    if(gid.x<resolution.x&&gid.y<resolution.y) {
+    if(gid.x<args.resolution[0].x&&gid.y<args.resolution[0].y) {
         
-        float dA = coeff[0];
-        float dB = coeff[1];
-        float feed = coeff[2];
-        float kill = coeff[3];
+        float dA = args.coeff[0].x;
+        float dB = args.coeff[0].y;
+        float feed = args.coeff[0].z;
+        float kill = args.coeff[0].w;
         
-        ushort width = srcTexture.get_width();
-        ushort height = srcTexture.get_height();
-        float2 bounds(width, height);
         float2 pos = float2(gid);
 
-        float2 aspect = float2(resolution.x/resolution.y,1.0);
+        float2 aspect = float2(args.resolution[0].x/args.resolution[0].y,1.0);
 
-        float2 weight = 1.0/bounds;
+        float2 weight = 1.0/args.resolution[0];
 
-        float2 src = srcTexture.sample(wrap,(pos+float2(0.5))*weight).xy;
+        float2 src = srcTexture.sample(samplers,(pos+float2(0.5))*weight).xy;
 
-        float2 N  = srcTexture.sample(SAMPLAR,(pos+float2( 0.5,-0.5))*weight).xy;
-        float2 S  = srcTexture.sample(SAMPLAR,(pos+float2( 0.5, 1.5))*weight).xy;
-        float2 E  = srcTexture.sample(SAMPLAR,(pos+float2( 1.5, 0.5))*weight).xy;
-        float2 W  = srcTexture.sample(SAMPLAR,(pos+float2(-0.5, 0.5))*weight).xy;
+        float2 N  = srcTexture.sample(samplers,(pos+float2( 0.5,-0.5))*weight).xy;
+        float2 S  = srcTexture.sample(samplers,(pos+float2( 0.5, 1.5))*weight).xy;
+        float2 E  = srcTexture.sample(samplers,(pos+float2( 1.5, 0.5))*weight).xy;
+        float2 W  = srcTexture.sample(samplers,(pos+float2(-0.5, 0.5))*weight).xy;
 
-        float2 NE = srcTexture.sample(SAMPLAR,(pos+float2( 1.5, 1.5))*weight).xy;
-        float2 NW = srcTexture.sample(SAMPLAR,(pos+float2(-0.5, 1.5))*weight).xy;
-        float2 SE = srcTexture.sample(SAMPLAR,(pos+float2( 1.5,-0.5))*weight).xy;
-        float2 SW = srcTexture.sample(SAMPLAR,(pos+float2(-0.5,-0.5))*weight).xy;
+        float2 NE = srcTexture.sample(samplers,(pos+float2( 1.5, 1.5))*weight).xy;
+        float2 NW = srcTexture.sample(samplers,(pos+float2(-0.5, 1.5))*weight).xy;
+        float2 SE = srcTexture.sample(samplers,(pos+float2( 1.5,-0.5))*weight).xy;
+        float2 SW = srcTexture.sample(samplers,(pos+float2(-0.5,-0.5))*weight).xy;
          
         float diff1 = 0.2;
         float diff2 = 0.05;
@@ -51,11 +62,11 @@ kernel void reactiondiffusion(texture2d<float,access::sample> srcTexture[[textur
         src.x += ((dA*lap.x) - (src.x*src.y*src.y) + (feed*(1.0-src.x)));
         src.y += ((dB*lap.y) + (src.x*src.y*src.y) - ((kill+feed)*src.y));
         
-        if(mouse.z==1.0) {
+        if(args.mouse[0].z==1.0) {
                 
-            float dist = distance(((mouse.xy*2.0)-1.0)*aspect,(float2(gid)/(resolution*0.5)-1.0)*aspect);
-            if(dist<mouse.w)  {
-                src.y += (1.0-dist/mouse.w)*0.1;
+            float dist = distance(((args.mouse[0].xy*2.0)-1.0)*aspect,(float2(gid)/(args.resolution[0]*0.5)-1.0)*aspect);
+            if(dist<args.mouse[0].w)  {
+                src.y += (1.0-dist/args.mouse[0].w)*0.1;
             }
         }
                 
